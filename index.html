@@ -51,6 +51,41 @@
 <link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
 
+<script>
+// ---- mobile sound unlock (runs BEFORE the engine creates its AudioContext) ----
+// 1) iOS 16.4+: treat game audio as "playback" so the silent switch does not mute it.
+try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+// 2) remember every AudioContext the engine makes, so a tap can always resume it.
+(function () {
+  const ctxs = [];
+  window.__vrAudioContexts = ctxs;
+  ['AudioContext', 'webkitAudioContext'].forEach(function (name) {
+    const Orig = window[name];
+    if (!Orig) return;
+    const Wrapped = function () { const c = new (Function.prototype.bind.apply(Orig, [null].concat([].slice.call(arguments))))(); ctxs.push(c); return c; };
+    Wrapped.prototype = Orig.prototype;
+    window[name] = Wrapped;
+  });
+  // 3) every tap / key: resume suspended contexts; first tap also plays 1 s of silence through an
+  //    <audio> tag, which switches older iOS to the media audio session (sound even with the silent switch on).
+  let silent = null;
+  function unlock() {
+    ctxs.forEach(function (c) { if (c.state !== 'running') c.resume().catch(function () {}); });
+    if (!silent) {
+      silent = new Audio('silence.mp3');
+      silent.setAttribute('playsinline', '');
+      silent.loop = true;
+      silent.volume = 0.01;
+      silent.play().catch(function () { silent = null; });
+    }
+  }
+  ['pointerdown', 'touchend', 'mousedown', 'keydown'].forEach(function (ev) {
+    window.addEventListener(ev, unlock, { capture: true, passive: true });
+  });
+  // coming back to the tab (phone lock screen / app switch) suspends audio: resume on return
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) unlock(); });
+})();
+</script>
 </head>
 <body>
 <canvas id="canvas">เบราว์เซอร์นี้ไม่รองรับ HTML5 canvas</canvas>
